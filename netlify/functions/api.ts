@@ -30,19 +30,34 @@ function isPasswordConfigured(): boolean {
 }
 
 function getDashboardStore() {
-  return getStore({ name: storeName, region: storeRegion });
+  return getStore({ name: storeName, region: storeRegion, consistency: 'strong' });
 }
 
 async function readCollection<T>(key: string, initialValue: T): Promise<T> {
   const store = getDashboardStore();
-  const saved = await store.get(key, { type: 'json' }) as T | null;
-  if (saved !== null) return saved;
-  await store.setJSON(key, initialValue);
-  return initialValue;
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const saved = await store.getWithMetadata(key, { type: 'json', consistency: 'strong' }) as { data: T } | null;
+    if (saved) return saved.data;
+    const result = await store.setJSON(key, initialValue, { onlyIfNew: true });
+    if (result.modified) return initialValue;
+  }
+  throw new Error(`Could not initialize ${key}`);
 }
 
-async function writeCollection<T>(key: string, value: T): Promise<void> {
-  await getDashboardStore().setJSON(key, value);
+async function updateCollection<T>(key: string, initialValue: T, update: (value: T) => T): Promise<T> {
+  const store = getDashboardStore();
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const saved = await store.getWithMetadata(key, { type: 'json', consistency: 'strong' }) as { data: T; etag?: string } | null;
+    const updated = update(saved?.data ?? initialValue);
+    const result = saved?.etag
+      ? await store.setJSON(key, updated, { onlyIfMatch: saved.etag })
+      : saved
+        ? { modified: false }
+        : await store.setJSON(key, updated, { onlyIfNew: true });
+    if (result.modified) return updated;
+    await new Promise((resolve) => setTimeout(resolve, Math.min(100, 10 * (attempt + 1))));
+  }
+  throw new Error(`Could not update ${key} after repeated concurrent writes`);
 }
 
 function isChartId(value: string): value is ChartId {
@@ -100,15 +115,15 @@ export default async function handler(request: Request): Promise<Response> {
           || !(entry.value2 === null || (typeof entry.value2 === 'number' && Number.isFinite(entry.value2)))
           || (entry.value1 === null && entry.value2 === null)
           || (chartId === 'personal-weight' && entry.value1 === null)) return error('Invalid chart entry', 400);
-        const rows = await readCollection<ChartEntry[]>(key, sampleCharts[chartId]);
-        const existing = rows.find((row) => row.date === entry.date);
-        const merged = {
-          ...entry,
-          value1: entry.value1 ?? existing?.value1 ?? null,
-          value2: entry.value2 ?? existing?.value2 ?? null,
-        };
-        const updated = [...rows.filter((row) => row.date !== entry.date), merged].sort((a, b) => a.date.localeCompare(b.date));
-        await writeCollection(key, updated);
+        const updated = await updateCollection<ChartEntry[]>(key, sampleCharts[chartId], (rows) => {
+          const existing = rows.find((row) => row.date === entry.date);
+          const merged = {
+            ...entry,
+            value1: entry.value1 ?? existing?.value1 ?? null,
+            value2: entry.value2 ?? existing?.value2 ?? null,
+          };
+          return [...rows.filter((row) => row.date !== entry.date), merged].sort((a, b) => a.date.localeCompare(b.date));
+        });
         return json(updated);
       }
     }
@@ -121,14 +136,14 @@ export default async function handler(request: Request): Promise<Response> {
       if (!isChartId(chartId)) return error('Unknown chart', 404);
       if (chartId === 'personal-weight' && valueKey === 'value2') return error('Unknown series', 404);
       const key = `charts/${chartId}`;
-      const rows = await readCollection<ChartEntry[]>(key, sampleCharts[chartId]);
-      const current = rows.find((row) => row.date === date);
-      if (!current || current[valueKey] === null) return json(rows);
-      const changed = { ...current, [valueKey]: null };
-      const updated = changed.value1 === null && changed.value2 === null
-        ? rows.filter((row) => row.date !== date)
-        : rows.map((row) => row.date === date ? changed : row);
-      await writeCollection(key, updated);
+      const updated = await updateCollection<ChartEntry[]>(key, sampleCharts[chartId], (rows) => {
+        const current = rows.find((row) => row.date === date);
+        if (!current || current[valueKey] === null) return rows;
+        const changed = { ...current, [valueKey]: null };
+        return changed.value1 === null && changed.value2 === null
+          ? rows.filter((row) => row.date !== date)
+          : rows.map((row) => row.date === date ? changed : row);
+      });
       return json(updated);
     }
 
@@ -139,18 +154,17 @@ export default async function handler(request: Request): Promise<Response> {
         if (!body || (body.category !== 'App ideas' && body.category !== 'Story ideas') || !body.text?.trim()) {
           return error('Invalid note', 400);
         }
-        const notes = await readCollection<Note[]>('notes', sampleNotes);
-        const updated = [{ id: crypto.randomUUID(), category: body.category, text: body.text.trim() }, ...notes];
-        await writeCollection('notes', updated);
+        const updated = await updateCollection<Note[]>('notes', sampleNotes, (notes) => [
+          { id: crypto.randomUUID(), category: body.category as Note['category'], text: body.text!.trim() },
+          ...notes,
+        ]);
         return json(updated);
       }
     }
 
     const noteRoute = path.match(/^\/notes\/([^/]+)$/);
     if (noteRoute && request.method === 'DELETE') {
-      const notes = await readCollection<Note[]>('notes', sampleNotes);
-      const updated = notes.filter((note) => note.id !== decodeURIComponent(noteRoute[1]));
-      await writeCollection('notes', updated);
+      const updated = await updateCollection<Note[]>('notes', sampleNotes, (notes) => notes.filter((note) => note.id !== decodeURIComponent(noteRoute[1])));
       return json(updated);
     }
 
@@ -159,18 +173,17 @@ export default async function handler(request: Request): Promise<Response> {
       if (request.method === 'POST') {
         const body = await parseBody<{ title?: string; url?: string }>(request);
         if (!body?.title?.trim() || !validUrl(body.url)) return error('Enter a name and a valid http or https URL', 400);
-        const links = await readCollection<UsefulLink[]>('links', sampleLinks);
-        const updated = [{ id: crypto.randomUUID(), title: body.title.trim(), url: body.url }, ...links];
-        await writeCollection('links', updated);
+        const updated = await updateCollection<UsefulLink[]>('links', sampleLinks, (links) => [
+          { id: crypto.randomUUID(), title: body.title!.trim(), url: body.url! },
+          ...links,
+        ]);
         return json(updated);
       }
     }
 
     const linkRoute = path.match(/^\/links\/([^/]+)$/);
     if (linkRoute && request.method === 'DELETE') {
-      const links = await readCollection<UsefulLink[]>('links', sampleLinks);
-      const updated = links.filter((link) => link.id !== decodeURIComponent(linkRoute[1]));
-      await writeCollection('links', updated);
+      const updated = await updateCollection<UsefulLink[]>('links', sampleLinks, (links) => links.filter((link) => link.id !== decodeURIComponent(linkRoute[1])));
       return json(updated);
     }
 
@@ -179,9 +192,10 @@ export default async function handler(request: Request): Promise<Response> {
       if (request.method === 'POST') {
         const body = await parseBody<{ text?: string }>(request);
         if (!body?.text?.trim()) return error('Enter an activity', 400);
-        const activities = await readCollection<Activity[]>('activities', sampleActivities);
-        const updated = [{ id: crypto.randomUUID(), text: body.text.trim(), done: false }, ...activities];
-        await writeCollection('activities', updated);
+        const updated = await updateCollection<Activity[]>('activities', sampleActivities, (activities) => [
+          { id: crypto.randomUUID(), text: body.text!.trim(), done: false },
+          ...activities,
+        ]);
         return json(updated);
       }
     }
@@ -189,17 +203,14 @@ export default async function handler(request: Request): Promise<Response> {
     const activityRoute = path.match(/^\/activities\/([^/]+)$/);
     if (activityRoute) {
       const id = decodeURIComponent(activityRoute[1]);
-      const activities = await readCollection<Activity[]>('activities', sampleActivities);
       if (request.method === 'PATCH') {
         const body = await parseBody<{ done?: boolean }>(request);
         if (typeof body?.done !== 'boolean') return error('Invalid activity state', 400);
-        const updated = activities.map((activity) => activity.id === id ? { ...activity, done: body.done! } : activity);
-        await writeCollection('activities', updated);
+        const updated = await updateCollection<Activity[]>('activities', sampleActivities, (activities) => activities.map((activity) => activity.id === id ? { ...activity, done: body.done! } : activity));
         return json(updated);
       }
       if (request.method === 'DELETE') {
-        const updated = activities.filter((activity) => activity.id !== id);
-        await writeCollection('activities', updated);
+        const updated = await updateCollection<Activity[]>('activities', sampleActivities, (activities) => activities.filter((activity) => activity.id !== id));
         return json(updated);
       }
     }
@@ -211,14 +222,12 @@ export default async function handler(request: Request): Promise<Response> {
         if (!body?.text?.trim() || !['high', 'medium', 'low'].includes(body.priority ?? '')) {
           return error('Enter a todo and choose a valid priority', 400);
         }
-        const todos = await readCollection<Todo[]>('todos', []);
-        const updated = [{
+        const updated = await updateCollection<Todo[]>('todos', [], (todos) => [{
           id: crypto.randomUUID(),
-          text: body.text.trim(),
+          text: body.text!.trim(),
           done: false,
           priority: body.priority!,
-        }, ...todos];
-        await writeCollection('todos', updated);
+        }, ...todos]);
         return json(updated);
       }
     }
@@ -226,17 +235,14 @@ export default async function handler(request: Request): Promise<Response> {
     const todoRoute = path.match(/^\/todos\/([^/]+)$/);
     if (todoRoute) {
       const id = decodeURIComponent(todoRoute[1]);
-      const todos = await readCollection<Todo[]>('todos', []);
       if (request.method === 'PATCH') {
         const body = await parseBody<{ done?: boolean }>(request);
         if (typeof body?.done !== 'boolean') return error('Invalid todo state', 400);
-        const updated = todos.map((todo) => todo.id === id ? { ...todo, done: body.done! } : todo);
-        await writeCollection('todos', updated);
+        const updated = await updateCollection<Todo[]>('todos', [], (todos) => todos.map((todo) => todo.id === id ? { ...todo, done: body.done! } : todo));
         return json(updated);
       }
       if (request.method === 'DELETE') {
-        const updated = todos.filter((todo) => todo.id !== id);
-        await writeCollection('todos', updated);
+        const updated = await updateCollection<Todo[]>('todos', [], (todos) => todos.filter((todo) => todo.id !== id));
         return json(updated);
       }
     }
