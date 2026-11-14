@@ -1,4 +1,5 @@
 import type { ChartEntry, ChartSeries } from './types';
+import { formatDate } from './date';
 
 interface ChartProps {
   entries: ChartEntry[];
@@ -40,7 +41,7 @@ export default function Chart({ entries, series, unit, title }: ChartProps) {
         {measured.map(({ entry, point: p }) => <circle key={`${item.key}-${entry.date}`} cx={p.x} cy={p.y} r="3" className={`dot ${item.color}`} />)}
       </g>;
     })}
-    {entries.map((entry, index) => <text key={entry.date} x={point(entries.length === 1 ? values[0] : min, index).x} y={height - 9} className="axis-label" textAnchor="middle">{entry.date.slice(5)}</text>)}
+    {entries.map((entry, index) => <text key={entry.date} x={point(entries.length === 1 ? values[0] : min, index).x} y={height - 9} className="axis-label" textAnchor="middle">{formatDate(entry.date)}</text>)}
     <text x="8" y={pad.top + 6} className="axis-label">{max}{unit}</text>
     <text x="8" y={height - pad.bottom} className="axis-label">{min}{unit}</text>
   </svg>;

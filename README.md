@@ -26,6 +26,8 @@ Use the `Chart` and `List` buttons on any tracker to switch views. In `List`, se
 
 For cat chart entries, enter Bébou's value, Tofu's value, or both. Blank value fields keep any existing value for that cat on the same date; use `×` in List view to delete a saved value.
 
+Dates display and accept as `dd-mm-yyyy`. They remain stored as ISO dates internally.
+
 The dashboard stores each section as one JSON blob: `charts/personal-weight`, `charts/cats-weight`, `charts/cats-bpm`, `notes`, `links`, `activities`, and `todos`. Deleting a blob makes the app seed that section with sample data again, or start it empty for to-dos. To clear a section permanently, overwrite its blob with an empty array using the Netlify Blobs API (`store.setJSON(key, [])`). To clear all dashboard data, do this for all seven keys. Keep any one-off reset code private and remove it after use.
 
 ## Security

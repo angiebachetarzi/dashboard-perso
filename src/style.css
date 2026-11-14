@@ -37,7 +37,7 @@ h2 { font-size: 16px; margin: 0; font-weight: 620; }
 .dot { stroke: white; stroke-width: 2; }
 .blue { stroke: #4c7294; fill: #4c7294; }
 .orange { stroke: #c48a56; fill: #c48a56; }
-.axis-label { fill: #989c97; font-size: 9px; }
+.axis-label { fill: #989c97; font-size: 7px; }
 .legend { display: flex; gap: 15px; min-height: 18px; margin: -1px 0 12px; }
 .legend span { font-size: 10px; color: #777c77; display: inline-flex; align-items: center; gap: 5px; }
 .legend i { width: 7px; height: 7px; border-radius: 50%; }

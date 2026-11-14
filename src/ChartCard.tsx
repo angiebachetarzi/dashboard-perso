@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { api } from './api';
 import Chart from './Chart';
+import { formatDate, parseDisplayDate, todayDisplayDate } from './date';
 import type { ChartEntry, ChartId, ChartSeries } from './types';
 
 type ChartView = 'chart' | 'list';
@@ -14,7 +15,7 @@ interface ChartCardProps {
 
 export default function ChartCard({ title, chartId, series, unit }: ChartCardProps) {
   const [entries, setEntries] = useState<ChartEntry[]>([]);
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(todayDisplayDate());
   const [values, setValues] = useState<Record<string, string>>({ value1: '', value2: '' });
   const [error, setError] = useState('');
   const [view, setView] = useState<ChartView>('chart');
@@ -25,12 +26,17 @@ export default function ChartCard({ title, chartId, series, unit }: ChartCardPro
 
   async function addEntry(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const isoDate = parseDisplayDate(date);
+    if (!isoDate) {
+      setError('Enter a valid date as dd-mm-yyyy.');
+      return;
+    }
     if (series.length > 1 && !values.value1 && !values.value2) {
       setError('Enter a value for at least one cat.');
       return;
     }
     const entry: ChartEntry = {
-      date,
+      date: isoDate,
       value1: values.value1 ? Number(values.value1) : null,
       value2: series.length > 1 && values.value2 ? Number(values.value2) : null,
     };
@@ -44,7 +50,7 @@ export default function ChartCard({ title, chartId, series, unit }: ChartCardPro
   }
 
   async function deleteValue(entry: ChartEntry, item: ChartSeries) {
-    if (!window.confirm(`Delete ${item.name}'s value for ${entry.date}?`)) return;
+    if (!window.confirm(`Delete ${item.name}'s value for ${formatDate(entry.date)}?`)) return;
     try {
       setEntries(await api.deleteChartValue(chartId, entry.date, item.key));
       setError('');
@@ -69,11 +75,11 @@ export default function ChartCard({ title, chartId, series, unit }: ChartCardPro
         <thead><tr><th scope="col">Date</th>{series.map((item) => <th scope="col" key={item.key}>{item.name} ({unit})</th>)}</tr></thead>
         <tbody>
           {entries.map((entry) => <tr key={entry.date}>
-            <td>{entry.date}</td>
+            <td>{formatDate(entry.date)}</td>
             {series.map((item) => <td key={item.key}>
               {entry[item.key] === null ? <span>—</span> : <span className="chart-value-cell">
                 {entry[item.key]}
-                <button type="button" className="delete-entry" aria-label={`Delete ${item.name} value for ${entry.date}`} onClick={() => deleteValue(entry, item)}>×</button>
+                <button type="button" className="delete-entry" aria-label={`Delete ${item.name} value for ${formatDate(entry.date)}`} onClick={() => deleteValue(entry, item)}>×</button>
               </span>}
             </td>)}
           </tr>)}
@@ -82,7 +88,7 @@ export default function ChartCard({ title, chartId, series, unit }: ChartCardPro
       </table>
     </div>}
     <form className="entry-form" onSubmit={addEntry}>
-      <label>Date<input type="date" value={date} onChange={(event) => setDate(event.target.value)} required /></label>
+      <label>Date<input type="text" inputMode="text" placeholder="dd-mm-yyyy" pattern="\d{2}-\d{2}-\d{4}" maxLength={10} value={date} onChange={(event) => setDate(event.target.value)} aria-label="Date in dd-mm-yyyy format" required /></label>
       {series.map((item) => <label key={item.key}>{item.name}<input type="number" step="0.1" value={values[item.key]} onChange={(event) => setValues({ ...values, [item.key]: event.target.value })} placeholder={unit} required={series.length === 1} /></label>)}
       <button type="submit">Add entry</button>
     </form>
