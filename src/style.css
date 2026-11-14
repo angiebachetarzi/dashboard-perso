@@ -23,10 +23,10 @@ h2 { font-size: 16px; margin: 0; font-weight: 620; }
 .tracker-card { min-height: 320px; }
 .chart { display: block; width: 100%; height: 180px; overflow: visible; }
 .chart-empty { display: grid; place-items: center; height: 180px; color: #969b96; font-size: 12px; }
-.chart-table-wrap { max-height: 220px; overflow: auto; border-top: 1px solid #eceeeb; }
+.chart-table-wrap { overflow-x: auto; border-top: 1px solid #eceeeb; }
 .chart-table { width: 100%; border-collapse: collapse; text-align: left; font-size: 11px; }
 .chart-table th, .chart-table td { padding: 8px 6px; border-bottom: 1px solid #eceeeb; white-space: nowrap; }
-.chart-table th { position: sticky; top: 0; background: white; color: #777c77; font-weight: 550; }
+.chart-table th { background: white; color: #777c77; font-weight: 550; }
 .chart-table .empty-table { text-align: center; color: #929792; padding: 22px 8px; }
 .chart-value-cell { display: inline-flex; align-items: center; gap: 4px; }
 .delete-entry { background: transparent; color: #9a4740; padding: 2px 5px; font-size: 13px; }
