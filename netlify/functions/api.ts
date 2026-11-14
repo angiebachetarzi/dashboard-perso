@@ -1,6 +1,6 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { getStore } from '@netlify/blobs';
-import type { Activity, ChartEntry, ChartId, Note, UsefulLink } from '../../src/types';
+import type { Activity, ChartEntry, ChartId, Note, Todo, TodoPriority, UsefulLink } from '../../src/types';
 import { chartIds, sampleActivities, sampleCharts, sampleLinks, sampleNotes } from '../../src/initialData';
 
 const storeName = 'personal-dashboard';
@@ -96,13 +96,40 @@ export default async function handler(request: Request): Promise<Response> {
       if (request.method === 'POST') {
         const entry = await parseBody<ChartEntry>(request);
         if (!entry || !/^\d{4}-\d{2}-\d{2}$/.test(entry.date)
-          || !Number.isFinite(entry.value1)
-          || !(entry.value2 === null || Number.isFinite(entry.value2))) return error('Invalid chart entry', 400);
+          || !(entry.value1 === null || (typeof entry.value1 === 'number' && Number.isFinite(entry.value1)))
+          || !(entry.value2 === null || (typeof entry.value2 === 'number' && Number.isFinite(entry.value2)))
+          || (entry.value1 === null && entry.value2 === null)
+          || (chartId === 'personal-weight' && entry.value1 === null)) return error('Invalid chart entry', 400);
         const rows = await readCollection<ChartEntry[]>(key, sampleCharts[chartId]);
-        const updated = [...rows.filter((row) => row.date !== entry.date), entry].sort((a, b) => a.date.localeCompare(b.date));
+        const existing = rows.find((row) => row.date === entry.date);
+        const merged = {
+          ...entry,
+          value1: entry.value1 ?? existing?.value1 ?? null,
+          value2: entry.value2 ?? existing?.value2 ?? null,
+        };
+        const updated = [...rows.filter((row) => row.date !== entry.date), merged].sort((a, b) => a.date.localeCompare(b.date));
         await writeCollection(key, updated);
         return json(updated);
       }
+    }
+
+    const chartValueRoute = path.match(/^\/charts\/([^/]+)\/(\d{4}-\d{2}-\d{2})\/(value1|value2)$/);
+    if (chartValueRoute && request.method === 'DELETE') {
+      const chartId = decodeURIComponent(chartValueRoute[1]);
+      const date = chartValueRoute[2];
+      const valueKey = chartValueRoute[3] as 'value1' | 'value2';
+      if (!isChartId(chartId)) return error('Unknown chart', 404);
+      if (chartId === 'personal-weight' && valueKey === 'value2') return error('Unknown series', 404);
+      const key = `charts/${chartId}`;
+      const rows = await readCollection<ChartEntry[]>(key, sampleCharts[chartId]);
+      const current = rows.find((row) => row.date === date);
+      if (!current || current[valueKey] === null) return json(rows);
+      const changed = { ...current, [valueKey]: null };
+      const updated = changed.value1 === null && changed.value2 === null
+        ? rows.filter((row) => row.date !== date)
+        : rows.map((row) => row.date === date ? changed : row);
+      await writeCollection(key, updated);
+      return json(updated);
     }
 
     if (path === '/notes') {
@@ -173,6 +200,43 @@ export default async function handler(request: Request): Promise<Response> {
       if (request.method === 'DELETE') {
         const updated = activities.filter((activity) => activity.id !== id);
         await writeCollection('activities', updated);
+        return json(updated);
+      }
+    }
+
+    if (path === '/todos') {
+      if (request.method === 'GET') return json(await readCollection<Todo[]>('todos', []));
+      if (request.method === 'POST') {
+        const body = await parseBody<{ text?: string; priority?: TodoPriority }>(request);
+        if (!body?.text?.trim() || !['high', 'medium', 'low'].includes(body.priority ?? '')) {
+          return error('Enter a todo and choose a valid priority', 400);
+        }
+        const todos = await readCollection<Todo[]>('todos', []);
+        const updated = [{
+          id: crypto.randomUUID(),
+          text: body.text.trim(),
+          done: false,
+          priority: body.priority!,
+        }, ...todos];
+        await writeCollection('todos', updated);
+        return json(updated);
+      }
+    }
+
+    const todoRoute = path.match(/^\/todos\/([^/]+)$/);
+    if (todoRoute) {
+      const id = decodeURIComponent(todoRoute[1]);
+      const todos = await readCollection<Todo[]>('todos', []);
+      if (request.method === 'PATCH') {
+        const body = await parseBody<{ done?: boolean }>(request);
+        if (typeof body?.done !== 'boolean') return error('Invalid todo state', 400);
+        const updated = todos.map((todo) => todo.id === id ? { ...todo, done: body.done! } : todo);
+        await writeCollection('todos', updated);
+        return json(updated);
+      }
+      if (request.method === 'DELETE') {
+        const updated = todos.filter((todo) => todo.id !== id);
+        await writeCollection('todos', updated);
         return json(updated);
       }
     }

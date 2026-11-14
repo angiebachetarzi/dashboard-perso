@@ -1,4 +1,4 @@
-import type { Activity, ChartEntry, ChartId, Note, NoteCategory, UsefulLink } from './types';
+import type { Activity, ChartEntry, ChartId, Note, NoteCategory, Todo, TodoPriority, UsefulLink } from './types';
 
 let dashboardPassword = '';
 
@@ -32,6 +32,9 @@ export const api = {
   saveChartEntry: (id: ChartId, entry: ChartEntry) => request<ChartEntry[]>(`/api/charts/${id}`, {
     method: 'POST', body: JSON.stringify(entry),
   }),
+  deleteChartValue: (id: ChartId, date: string, key: 'value1' | 'value2') => request<ChartEntry[]>(`/api/charts/${id}/${encodeURIComponent(date)}/${key}`, {
+    method: 'DELETE',
+  }),
   getNotes: () => request<Note[]>('/api/notes'),
   addNote: (note: Omit<Note, 'id'>) => request<Note[]>('/api/notes', {
     method: 'POST', body: JSON.stringify(note),
@@ -50,6 +53,14 @@ export const api = {
     method: 'PATCH', body: JSON.stringify({ done }),
   }),
   deleteActivity: (id: string) => request<Activity[]>(`/api/activities/${id}`, { method: 'DELETE' }),
+  getTodos: () => request<Todo[]>('/api/todos'),
+  addTodo: (text: string, priority: TodoPriority) => request<Todo[]>('/api/todos', {
+    method: 'POST', body: JSON.stringify({ text, priority }),
+  }),
+  updateTodo: (id: string, done: boolean) => request<Todo[]>(`/api/todos/${id}`, {
+    method: 'PATCH', body: JSON.stringify({ done }),
+  }),
+  deleteTodo: (id: string) => request<Todo[]>(`/api/todos/${id}`, { method: 'DELETE' }),
 };
 
 export function isNoteCategory(value: string): value is NoteCategory {

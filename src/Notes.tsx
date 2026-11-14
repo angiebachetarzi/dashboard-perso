@@ -9,7 +9,7 @@ export default function Notes() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    api.getNotes().then(setNotes).catch(() => setError('Could not load notes. Is the database server running?'));
+    api.getNotes().then(setNotes).catch(() => setError('Could not load notes. Try reloading the dashboard.'));
   }, []);
 
   async function addNote(event: FormEvent<HTMLFormElement>) {
@@ -20,7 +20,7 @@ export default function Notes() {
       setText('');
       setError('');
     } catch {
-      setError('Could not save note. Check that the database server is running.');
+      setError('Could not save note. Try again.');
     }
   }
 

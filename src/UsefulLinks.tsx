@@ -9,7 +9,7 @@ export default function UsefulLinks() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    api.getUsefulLinks().then(setLinks).catch(() => setError('Could not load links. Is the database server running?'));
+    api.getUsefulLinks().then(setLinks).catch(() => setError('Could not load links. Try reloading the dashboard.'));
   }, []);
 
   async function addLink(event: FormEvent<HTMLFormElement>) {

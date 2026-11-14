@@ -4,7 +4,7 @@ export type NoteCategory = 'App ideas' | 'Story ideas';
 
 export interface ChartEntry {
   date: string;
-  value1: number;
+  value1: number | null;
   value2: number | null;
 }
 
@@ -24,6 +24,15 @@ export interface Activity {
   id: string;
   text: string;
   done: boolean;
+}
+
+export type TodoPriority = 'high' | 'medium' | 'low';
+
+export interface Todo {
+  id: string;
+  text: string;
+  done: boolean;
+  priority: TodoPriority;
 }
 
 

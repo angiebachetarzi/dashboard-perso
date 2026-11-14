@@ -1,13 +1,14 @@
 import ChartCard from './ChartCard';
 import Activities from './Activities';
+import TodoList from './TodoList';
 import Notes from './Notes';
 import UsefulLinks from './UsefulLinks';
 import type { ChartSeries } from './types';
 
 const oneCat: ChartSeries[] = [{ key: 'value1', name: 'Weight', color: 'blue' }];
 const twoCats: ChartSeries[] = [
-  { key: 'value1', name: 'Cat 1', color: 'blue' },
-  { key: 'value2', name: 'Cat 2', color: 'orange' },
+  { key: 'value1', name: 'Bébou', color: 'blue' },
+  { key: 'value2', name: 'Tofu', color: 'orange' },
 ];
 
 interface AppProps {
@@ -32,6 +33,7 @@ export default function App({ onLogout }: AppProps) {
       <div className="right-column">
         <UsefulLinks />
         <Activities />
+        <TodoList />
         <ChartCard title="Cats’ heart rate" chartId="cats-bpm" series={twoCats} unit="bpm" />
       </div>
     </div>
